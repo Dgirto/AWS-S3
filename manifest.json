@@ -1,0 +1,68 @@
+{
+  "id": "aws_s3",
+  "name": "AWS S3",
+  "name_en": "AWS S3",
+  "version": "1.0.0",
+  "description": "Gestión de objetos en Amazon S3: listar objetos, subir archivo, descargar archivo y generar URL prefirmada",
+  "description_en": "Manage objects in Amazon S3: list objects, upload a file, download a file and generate a presigned URL",
+  "icon": "icon.svg",
+  "category": "cloud",
+  "category_en": "cloud",
+  "keywords": ["aws", "s3", "amazon", "storage", "almacenamiento", "cloud", "nube", "objetos", "objects"],
+  "library": {
+    "package": "ruvic-aws-s3-connector",
+    "install": "pip install git+https://github.com/Dgirto/AWS-S3.git#subdirectory=lib",
+    "import_name": "ruvic_aws_s3_connector"
+  },
+  "auth_modes": [
+    {
+      "id": "access_key",
+      "label": "Access Key ID y Secret Access Key",
+      "fields": [
+        {
+          "key": "access_key_id",
+          "label": "Access Key ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "AKIAIOSFODNN7EXAMPLE"
+        },
+        {
+          "key": "secret_access_key",
+          "label": "Secret Access Key",
+          "type": "password",
+          "secret": true,
+          "required": true
+        },
+        {
+          "key": "region",
+          "label": "Región de AWS",
+          "type": "text",
+          "required": true,
+          "placeholder": "us-east-1"
+        },
+        {
+          "key": "bucket",
+          "label": "Bucket",
+          "type": "text",
+          "required": true,
+          "placeholder": "mi-bucket-produccion",
+          "help_text": "El conector opera sobre un único bucket. La política IAM del usuario debe limitarse a este bucket (principio de mínimo privilegio)."
+        },
+        {
+          "key": "connect_timeout",
+          "label": "Timeout de conexión (segundos)",
+          "type": "number",
+          "required": false,
+          "default": "10"
+        }
+      ]
+    }
+  ],
+  "env_prefix": "RUVIC_AWS_S3_",
+  "operations": ["s3.list_objects", "s3.upload", "s3.download", "s3.presigned_url"],
+  "test_connection": true,
+  "docs": {
+    "skill": "SKILL.md",
+    "permissions_note": "El usuario o rol IAM necesita s3:ListBucket, s3:GetObject y s3:PutObject sobre el bucket configurado (y su contenido, arn:aws:s3:::bucket/*). No se requieren permisos de administración (s3:DeleteBucket, s3:PutBucketPolicy, etc.). Se recomienda una policy con Resource limitado a ese único bucket."
+  }
+}

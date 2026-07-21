@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="doc_title">Conector AWS S3 — Ruvic</title>
+  <link rel="stylesheet" href="assets/ruvic.css">
+</head>
+<body class="guide">
+  <main class="ruvic-container">
+
+    <nav class="ruvic-toc" aria-label="Índice">
+      <h2 data-i18n="toc_title">Contenido</h2>
+      <ol>
+        <li><a href="#que-es" data-i18n="toc.que_es">¿Qué es y para qué sirve?</a></li>
+        <li><a href="#prerrequisitos" data-i18n="toc.prerrequisitos">Prerrequisitos</a></li>
+        <li><a href="#configuracion-fabricante" data-i18n="toc.configuracion_fabricante">Configuración en el fabricante</a></li>
+        <li><a href="#permisos" data-i18n="toc.permisos">Permisos requeridos</a></li>
+        <li><a href="#configuracion-ruvic" data-i18n="toc.configuracion_ruvic">Configuración en Ruvic</a></li>
+        <li><a href="#verificacion" data-i18n="toc.verificacion">Verificación</a></li>
+        <li><a href="#solucion-problemas" data-i18n="toc.solucion_problemas">Solución de problemas</a></li>
+        <li><a href="#faq-seguridad" data-i18n="toc.faq_seguridad">Preguntas frecuentes y notas de seguridad</a></li>
+      </ol>
+    </nav>
+
+    <h1 data-i18n="guide_title">AWS S3</h1>
+    <p class="guide-updated">{{ULTIMA_ACTUALIZACION}}</p>
+
+    <!-- ============ 1. QUÉ ES ============ -->
+    <section>
+      <h2 id="que-es" data-i18n="section.que_es">¿Qué es y para qué sirve?</h2>
+      <p data-i18n="que_es.body">El conector AWS S3 permite que el agente de Ruvic gestione objetos en un bucket específico de Amazon S3. Una vez configurado, puedes pedirle al agente cosas como:</p>
+      <ul>
+        <li data-i18n="que_es.ej1">“Sube este reporte al bucket con el nombre reportes/julio-2026.csv.”</li>
+        <li data-i18n="que_es.ej2">“¿Qué archivos hay en la carpeta facturas/ del bucket?”</li>
+        <li data-i18n="que_es.ej3">“Genérame un enlace para descargar el archivo contrato.pdf que dure 1 hora.”</li>
+      </ul>
+      <p data-i18n="que_es.ops">Operaciones soportadas:</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.operacion">Operación</th>
+            <th data-i18n="table.que_hace">Qué hace</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>s3.list_objects</code></td>
+            <td data-i18n="ops.list">Lista los objetos del bucket, con filtro por prefijo</td>
+          </tr>
+          <tr>
+            <td><code>s3.upload</code></td>
+            <td data-i18n="ops.upload">Sube (o sobrescribe) contenido en una clave del bucket</td>
+          </tr>
+          <tr>
+            <td><code>s3.download</code></td>
+            <td data-i18n="ops.download">Descarga el contenido de un objeto</td>
+          </tr>
+          <tr>
+            <td><code>s3.presigned_url</code></td>
+            <td data-i18n="ops.presigned">Genera una URL de acceso temporal, sin exponer credenciales</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout callout-warning">
+        <span class="callout-title" data-i18n="que_es.callout.title">Este conector escribe</span>
+        <span data-i18n="que_es.callout.body">s3.upload sobrescribe el objeto de la clave indicada. El conector opera sobre un único bucket; se recomienda que la policy IAM del usuario esté limitada a ese bucket específico.</span>
+      </div>
+    </section>
+
+    <!-- ============ 2. PRERREQUISITOS ============ -->
+    <section>
+      <h2 id="prerrequisitos" data-i18n="section.prerrequisitos">Prerrequisitos</h2>
+      <ul>
+        <li data-i18n="prer.cuenta">Una cuenta de <strong>AWS</strong> con un bucket S3 ya creado.</li>
+        <li data-i18n="prer.admin">Acceso a la consola de <strong>IAM</strong> para crear un usuario y su policy, solo durante la configuración inicial.</li>
+        <li data-i18n="prer.datos">El nombre del bucket y la región de AWS donde está creado (ej. <code>us-east-1</code>).</li>
+      </ul>
+    </section>
+
+    <!-- ============ 3. CONFIGURACIÓN EN EL FABRICANTE ============ -->
+    <section>
+      <h2 id="configuracion-fabricante" data-i18n="section.configuracion_fabricante">Configuración en el fabricante</h2>
+      <p data-i18n="fab.intro">Vas a crear un <strong>usuario IAM dedicado</strong> para Ruvic, con una policy limitada al bucket que quieres exponer. No reutilices credenciales root ni las de otra aplicación.</p>
+      <ol class="ruvic-steps">
+        <li>
+          <strong data-i18n="fab.p1.t">Crea la policy limitada al bucket.</strong>
+          <p data-i18n="fab.p1.b">En IAM → Policies → Create policy → pestaña JSON, reemplazando <code>mi-bucket-produccion</code> por el nombre real de tu bucket:</p>
+<pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::mi-bucket-produccion"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:::mi-bucket-produccion/*"
+    }
+  ]
+}</code></pre>
+        </li>
+        <li>
+          <strong data-i18n="fab.p2.t">Crea el usuario IAM y adjunta la policy.</strong>
+          <p data-i18n="fab.p2.b">En IAM → Users → Create user → marca "Provide user access to the AWS Management Console" en NO (es un usuario programático) → adjunta la policy creada en el paso 1.</p>
+          <div class="screenshot-placeholder" data-i18n="fab.p2.img">[ Captura: creación de usuario IAM con la policy adjunta — reemplazar por assets/img/s3-iam-user.png ]</div>
+        </li>
+        <li>
+          <strong data-i18n="fab.p3.t">Genera las claves de acceso.</strong>
+          <p data-i18n="fab.p3.b">En la página del usuario → pestaña "Security credentials" → "Create access key" → tipo "Application running outside AWS". Copia el <strong>Access Key ID</strong> y el <strong>Secret Access Key</strong> (este último solo se muestra una vez): los usarás en el formulario de Ruvic.</p>
+        </li>
+        <li>
+          <strong data-i18n="fab.p4.t">Verifica el acceso desde la línea de comandos.</strong>
+          <p data-i18n="fab.p4.b">Con el AWS CLI configurado con esas credenciales:</p>
+<pre><code>aws s3 ls s3://mi-bucket-produccion --region us-east-1</code></pre>
+          <p data-i18n="fab.p4.result">Si responde sin error (aunque el bucket esté vacío), el fabricante quedó listo. Anota estos valores para la siguiente sección: Access Key ID, Secret Access Key, región y nombre del bucket.</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============ 4. PERMISOS ============ -->
+    <section>
+      <h2 id="permisos" data-i18n="section.permisos">Permisos requeridos</h2>
+      <p data-i18n="perm.intro">Principio de mínimo privilegio: el usuario de Ruvic solo necesita estos permisos, limitados al bucket configurado. No otorgues <code>s3:*</code>, <code>s3:DeleteBucket</code>, <code>s3:PutBucketPolicy</code> ni acceso a otros buckets.</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.permiso">Permiso</th>
+            <th data-i18n="table.para_que">Para qué sirve</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>s3:ListBucket</code> <span data-i18n="perm.list.scope">(sobre el bucket)</span></td>
+            <td data-i18n="perm.list.body">Listar objetos (<code>s3.list_objects</code>)</td>
+          </tr>
+          <tr>
+            <td><code>s3:GetObject</code> <span data-i18n="perm.get.scope">(sobre los objetos)</span></td>
+            <td data-i18n="perm.get.body">Descargar objetos y generar URLs de descarga (<code>s3.download</code>, <code>s3.presigned_url</code>)</td>
+          </tr>
+          <tr>
+            <td><code>s3:PutObject</code> <span data-i18n="perm.put.scope">(sobre los objetos)</span></td>
+            <td data-i18n="perm.put.body">Subir objetos y generar URLs de subida (<code>s3.upload</code>, <code>s3.presigned_url</code>)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ 5. CONFIGURACIÓN EN RUVIC ============ -->
+    <section>
+      <h2 id="configuracion-ruvic" data-i18n="section.configuracion_ruvic">Configuración en Ruvic</h2>
+      <p data-i18n="ruvic.intro">Entra a <strong>Settings → Conectores</strong>, busca la tarjeta <strong>AWS S3</strong> y pulsa <strong>Configurar</strong>. Diligencia el formulario con los valores que obtuviste en la sección anterior:</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.campo">Campo del formulario</th>
+            <th data-i18n="table.valor">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="ruvic.f.accesskey">Access Key ID</td>
+            <td data-i18n="ruvic.v.accesskey">El Access Key ID del paso 3</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.secretkey">Secret Access Key</td>
+            <td data-i18n="ruvic.v.secretkey">El Secret Access Key del paso 3. Se guarda cifrado como secreto: la interfaz no volverá a mostrarlo</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.region">Región de AWS</td>
+            <td data-i18n="ruvic.v.region">La región donde está creado el bucket (ej. <code>us-east-1</code>)</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.bucket">Bucket</td>
+            <td data-i18n="ruvic.v.bucket">Nombre del bucket configurado en la policy del paso 1</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.timeout">Timeout de conexión</td>
+            <td data-i18n="ruvic.v.timeout">Opcional; <code>10</code> segundos por defecto</td>
+          </tr>
+        </tbody>
+      </table>
+      <p data-i18n="ruvic.save">Guarda y pulsa <span class="ruvic-button">Probar conexión</span> — la plataforma verificará el acceso al bucket configurado.</p>
+      <div class="screenshot-placeholder" data-i18n="ruvic.img">[ Captura: formulario del conector AWS S3 en Settings → Conectores — reemplazar por assets/img/s3-form.png ]</div>
+    </section>
+
+    <!-- ============ 6. VERIFICACIÓN ============ -->
+    <section>
+      <h2 id="verificacion" data-i18n="section.verificacion">Verificación</h2>
+      <ol class="ruvic-steps">
+        <li>
+          <strong data-i18n="ver.p1.t">Test de conexión exitoso.</strong>
+          <p data-i18n="ver.p1.b">El botón <em>Probar conexión</em> debe responder: <em>“Conexión exitosa al bucket 'mi-bucket-produccion' en us-east-1”</em>. La tarjeta del conector cambia a estado <strong>Configurado</strong>.</p>
+        </li>
+        <li>
+          <strong data-i18n="ver.p2.t">Automatización mínima de prueba.</strong>
+          <p data-i18n="ver.p2.b">Abre una conversación nueva con el agente y pídele: <em>“Sube un archivo de prueba al bucket con el texto 'hola mundo' y luego dime qué archivos hay.”</em> El agente debe subir el objeto y listarlo de vuelta. Si lo hace, el conector quedó operativo de punta a punta.</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============ 7. SOLUCIÓN DE PROBLEMAS ============ -->
+    <section>
+      <h2 id="solucion-problemas" data-i18n="section.solucion_problemas">Solución de problemas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.sintoma">Mensaje / síntoma</th>
+            <th data-i18n="table.causa">Causa probable y solución</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="prob.s1">“Credenciales inválidas o sin permiso IAM suficiente”</td>
+            <td data-i18n="prob.c1">Access Key o Secret Key mal copiados, o la policy no incluye los permisos necesarios sobre ese bucket. Reintenta los pasos 1 y 3 de la sección 3.</td>
+          </tr>
+          <tr>
+            <td data-i18n="prob.s2">“No se pudo conectar al servicio S3 … (timeout)”</td>
+            <td data-i18n="prob.c2">La región configurada no coincide con la región real del bucket, o hay un problema de red saliente hacia AWS. Verifica la región con <code>aws s3api get-bucket-location --bucket tu-bucket</code>.</td>
+          </tr>
+          <tr>
+            <td data-i18n="prob.s3">“El bucket no existe o no es accesible”</td>
+            <td data-i18n="prob.c3">Nombre de bucket mal escrito en el formulario, o la policy IAM apunta a un ARN distinto. Verifica que el ARN de la policy coincida exactamente con el nombre del bucket.</td>
+          </tr>
+          <tr>
+            <td data-i18n="prob.s4">El agente lista objetos pero falla al descargar uno</td>
+            <td data-i18n="prob.c4">Falta <code>s3:GetObject</code> en la policy, o la clave del objeto tiene mayúsculas/espacios distintos a los mostrados (S3 distingue mayúsculas de minúsculas).</td>
+          </tr>
+          <tr>
+            <td data-i18n="prob.s5">El conector aparece “Sin configurar” tras guardar</td>
+            <td data-i18n="prob.c5">Algún campo obligatorio quedó vacío. Ábrelo de nuevo y completa Access Key ID, Secret Access Key, región y bucket.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ 8. FAQ Y SEGURIDAD ============ -->
+    <section>
+      <h2 id="faq-seguridad" data-i18n="section.faq_seguridad">Preguntas frecuentes y notas de seguridad</h2>
+
+      <h3 data-i18n="faq.q1">¿El agente puede acceder a otros buckets de mi cuenta?</h3>
+      <p data-i18n="faq.a1">No, si la policy IAM está correctamente limitada (ver sección 3) — el Resource de la policy apunta a un solo bucket. Si usas una policy más amplia (ej. "Resource": "*"), el conector técnicamente podría acceder a otros buckets, aunque en la práctica solo opera sobre el bucket configurado en el formulario.</p>
+
+      <h3 data-i18n="faq.q2">¿Dónde queda guardado el Secret Access Key?</h3>
+      <p data-i18n="faq.a2">Como secreto en el almacén de credenciales de la plataforma, asociado a tu usuario. La interfaz nunca vuelve a mostrarlo; solo indica “definida”. Para cambiarlo, escribe uno nuevo en el formulario; para conservarlo al editar otros campos, deja el campo vacío.</p>
+
+      <h3 data-i18n="faq.q3">Rotación de credenciales</h3>
+      <p data-i18n="faq.a3">Recomendado cada 90 días o según tu política: genera un nuevo Access Key en IAM → Security credentials, actualízalo en el formulario del conector, prueba la conexión, y luego desactiva/elimina la clave anterior desde la consola de AWS.</p>
+
+      <h3 data-i18n="faq.q4">¿Qué hago si las credenciales se comprometen?</h3>
+      <ol>
+        <li data-i18n="faq.a4.li1">Desactiva o elimina el Access Key de inmediato en IAM → Security credentials.</li>
+        <li data-i18n="faq.a4.li2">Revisa la actividad reciente en AWS CloudTrail para ese usuario.</li>
+        <li data-i18n="faq.a4.li3">Genera un Access Key nuevo y actualízalo en el formulario del conector.</li>
+      </ol>
+
+      <h3 data-i18n="faq.q5">¿Expiran las credenciales?</h3>
+      <p data-i18n="faq.a5">Por defecto no (las Access Keys de IAM no expiran solas). Si tu organización exige rotación forzosa, puedes configurar una política de IAM con antigüedad máxima y recibirás alertas para rotarlas manualmente.</p>
+
+      <div class="callout callout-warning">
+        <span class="callout-title" data-i18n="faq.bp.title">Buenas prácticas</span>
+        <span data-i18n="faq.bp.body">Usa siempre un usuario IAM dedicado con policy limitada a un único bucket; nunca uses las credenciales root de la cuenta de AWS; prefiere URLs prefirmadas en vez de compartir archivos descargados manualmente; y evita compartir el Secret Access Key por canales no seguros.</span>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const I18N = {
+      es: {
+        doc_title: "Conector AWS S3 — Ruvic",
+        toc_title: "Contenido",
+        "toc.que_es": "¿Qué es y para qué sirve?",
+        "toc.prerrequisitos": "Prerrequisitos",
+        "toc.configuracion_fabricante": "Configuración en el fabricante",
+        "toc.permisos": "Permisos requeridos",
+        "toc.configuracion_ruvic": "Configuración en Ruvic",
+        "toc.verificacion": "Verificación",
+        "toc.solucion_problemas": "Solución de problemas",
+        "toc.faq_seguridad": "Preguntas frecuentes y notas de seguridad",
+        guide_title: "AWS S3",
+        "section.que_es": "¿Qué es y para qué sirve?",
+        "que_es.body": "El conector AWS S3 permite que el agente de Ruvic gestione objetos en un bucket específico de Amazon S3. Una vez configurado, puedes pedirle al agente cosas como:",
+        "que_es.ej1": "“Sube este reporte al bucket con el nombre reportes/julio-2026.csv.”",
+        "que_es.ej2": "“¿Qué archivos hay en la carpeta facturas/ del bucket?”",
+        "que_es.ej3": "“Genérame un enlace para descargar el archivo contrato.pdf que dure 1 hora.”",
+        "que_es.ops": "Operaciones soportadas:",
+        "table.operacion": "Operación",
+        "table.que_hace": "Qué hace",
+        "ops.list": "Lista los objetos del bucket, con filtro por prefijo",
+        "ops.upload": "Sube (o sobrescribe) contenido en una clave del bucket",
+        "ops.download": "Descarga el contenido de un objeto",
+        "ops.presigned": "Genera una URL de acceso temporal, sin exponer credenciales",
+        "que_es.callout.title": "Este conector escribe",
+        "que_es.callout.body": "s3.upload sobrescribe el objeto de la clave indicada. El conector opera sobre un único bucket; se recomienda que la policy IAM del usuario esté limitada a ese bucket específico.",
+        "section.prerrequisitos": "Prerrequisitos",
+        "prer.cuenta": "Una cuenta de AWS con un bucket S3 ya creado.",
+        "prer.admin": "Acceso a la consola de IAM para crear un usuario y su policy, solo durante la configuración inicial.",
+        "prer.datos": "El nombre del bucket y la región de AWS donde está creado (ej. us-east-1).",
+        "section.configuracion_fabricante": "Configuración en el fabricante",
+        "fab.intro": "Vas a crear un usuario IAM dedicado para Ruvic, con una policy limitada al bucket que quieres exponer. No reutilices credenciales root ni las de otra aplicación.",
+        "fab.p1.t": "Crea la policy limitada al bucket.",
+        "fab.p1.b": "En IAM → Policies → Create policy → pestaña JSON, reemplazando mi-bucket-produccion por el nombre real de tu bucket:",
+        "fab.p2.t": "Crea el usuario IAM y adjunta la policy.",
+        "fab.p2.b": "En IAM → Users → Create user → marca \"Provide user access to the AWS Management Console\" en NO (es un usuario programático) → adjunta la policy creada en el paso 1.",
+        "fab.p2.img": "[ Captura: creación de usuario IAM con la policy adjunta — reemplazar por assets/img/s3-iam-user.png ]",
+        "fab.p3.t": "Genera las claves de acceso.",
+        "fab.p3.b": "En la página del usuario → pestaña \"Security credentials\" → \"Create access key\" → tipo \"Application running outside AWS\". Copia el Access Key ID y el Secret Access Key (este último solo se muestra una vez): los usarás en el formulario de Ruvic.",
+        "fab.p4.t": "Verifica el acceso desde la línea de comandos.",
+        "fab.p4.b": "Con el AWS CLI configurado con esas credenciales:",
+        "fab.p4.result": "Si responde sin error (aunque el bucket esté vacío), el fabricante quedó listo. Anota estos valores para la siguiente sección: Access Key ID, Secret Access Key, región y nombre del bucket.",
+        "section.permisos": "Permisos requeridos",
+        "perm.intro": "Principio de mínimo privilegio: el usuario de Ruvic solo necesita estos permisos, limitados al bucket configurado. No otorgues s3:*, s3:DeleteBucket, s3:PutBucketPolicy ni acceso a otros buckets.",
+        "table.permiso": "Permiso",
+        "table.para_que": "Para qué sirve",
+        "perm.list.scope": "(sobre el bucket)",
+        "perm.list.body": "Listar objetos (s3.list_objects)",
+        "perm.get.scope": "(sobre los objetos)",
+        "perm.get.body": "Descargar objetos y generar URLs de descarga (s3.download, s3.presigned_url)",
+        "perm.put.scope": "(sobre los objetos)",
+        "perm.put.body": "Subir objetos y generar URLs de subida (s3.upload, s3.presigned_url)",
+        "section.configuracion_ruvic": "Configuración en Ruvic",
+        "ruvic.intro": "Entra a Settings → Conectores, busca la tarjeta AWS S3 y pulsa Configurar. Diligencia el formulario con los valores que obtuviste en la sección anterior:",
+        "table.campo": "Campo del formulario",
+        "table.valor": "Valor",
+        "ruvic.f.accesskey": "Access Key ID",
+        "ruvic.v.accesskey": "El Access Key ID del paso 3",
+        "ruvic.f.secretkey": "Secret Access Key",
+        "ruvic.v.secretkey": "El Secret Access Key del paso 3. Se guarda cifrado como secreto: la interfaz no volverá a mostrarlo",
+        "ruvic.f.region": "Región de AWS",
+        "ruvic.v.region": "La región donde está creado el bucket (ej. us-east-1)",
+        "ruvic.f.bucket": "Bucket",
+        "ruvic.v.bucket": "Nombre del bucket configurado en la policy del paso 1",
+        "ruvic.f.timeout": "Timeout de conexión",
+        "ruvic.v.timeout": "Opcional; 10 segundos por defecto",
+        "ruvic.save": "Guarda y pulsa Probar conexión — la plataforma verificará el acceso al bucket configurado.",
+        "ruvic.img": "[ Captura: formulario del conector AWS S3 en Settings → Conectores — reemplazar por assets/img/s3-form.png ]",
+        "section.verificacion": "Verificación",
+        "ver.p1.t": "Test de conexión exitoso.",
+        "ver.p1.b": "El botón Probar conexión debe responder: “Conexión exitosa al bucket 'mi-bucket-produccion' en us-east-1”. La tarjeta del conector cambia a estado Configurado.",
+        "ver.p2.t": "Automatización mínima de prueba.",
+        "ver.p2.b": "Abre una conversación nueva con el agente y pídele: “Sube un archivo de prueba al bucket con el texto 'hola mundo' y luego dime qué archivos hay.” El agente debe subir el objeto y listarlo de vuelta. Si lo hace, el conector quedó operativo de punta a punta.",
+        "section.solucion_problemas": "Solución de problemas",
+        "table.sintoma": "Mensaje / síntoma",
+        "table.causa": "Causa probable y solución",
+        "prob.s1": "“Credenciales inválidas o sin permiso IAM suficiente”",
+        "prob.c1": "Access Key o Secret Key mal copiados, o la policy no incluye los permisos necesarios sobre ese bucket. Reintenta los pasos 1 y 3 de la sección 3.",
+        "prob.s2": "“No se pudo conectar al servicio S3 … (timeout)”",
+        "prob.c2": "La región configurada no coincide con la región real del bucket, o hay un problema de red saliente hacia AWS. Verifica la región con aws s3api get-bucket-location --bucket tu-bucket.",
+        "prob.s3": "“El bucket no existe o no es accesible”",
+        "prob.c3": "Nombre de bucket mal escrito en el formulario, o la policy IAM apunta a un ARN distinto. Verifica que el ARN de la policy coincida exactamente con el nombre del bucket.",
+        "prob.s4": "El agente lista objetos pero falla al descargar uno",
+        "prob.c4": "Falta s3:GetObject en la policy, o la clave del objeto tiene mayúsculas/espacios distintos a los mostrados (S3 distingue mayúsculas de minúsculas).",
+        "prob.s5": "El conector aparece “Sin configurar” tras guardar",
+        "prob.c5": "Algún campo obligatorio quedó vacío. Ábrelo de nuevo y completa Access Key ID, Secret Access Key, región y bucket.",
+        "section.faq_seguridad": "Preguntas frecuentes y notas de seguridad",
+        "faq.q1": "¿El agente puede acceder a otros buckets de mi cuenta?",
+        "faq.a1": "No, si la policy IAM está correctamente limitada (ver sección 3) — el Resource de la policy apunta a un solo bucket. Si usas una policy más amplia (ej. \"Resource\": \"*\"), el conector técnicamente podría acceder a otros buckets, aunque en la práctica solo opera sobre el bucket configurado en el formulario.",
+        "faq.q2": "¿Dónde queda guardado el Secret Access Key?",
+        "faq.a2": "Como secreto en el almacén de credenciales de la plataforma, asociado a tu usuario. La interfaz nunca vuelve a mostrarlo; solo indica “definida”. Para cambiarlo, escribe uno nuevo en el formulario; para conservarlo al editar otros campos, deja el campo vacío.",
+        "faq.q3": "Rotación de credenciales",
+        "faq.a3": "Recomendado cada 90 días o según tu política: genera un nuevo Access Key en IAM → Security credentials, actualízalo en el formulario del conector, prueba la conexión, y luego desactiva/elimina la clave anterior desde la consola de AWS.",
+        "faq.q4": "¿Qué hago si las credenciales se comprometen?",
+        "faq.a4.li1": "Desactiva o elimina el Access Key de inmediato en IAM → Security credentials.",
+        "faq.a4.li2": "Revisa la actividad reciente en AWS CloudTrail para ese usuario.",
+        "faq.a4.li3": "Genera un Access Key nuevo y actualízalo en el formulario del conector.",
+        "faq.q5": "¿Expiran las credenciales?",
+        "faq.a5": "Por defecto no (las Access Keys de IAM no expiran solas). Si tu organización exige rotación forzosa, puedes configurar una política de IAM con antigüedad máxima y recibirás alertas para rotarlas manualmente.",
+        "faq.bp.title": "Buenas prácticas",
+        "faq.bp.body": "Usa siempre un usuario IAM dedicado con policy limitada a un único bucket; nunca uses las credenciales root de la cuenta de AWS; prefiere URLs prefirmadas en vez de compartir archivos descargados manualmente; y evita compartir el Secret Access Key por canales no seguros.",
+      },
+      en: {
+        doc_title: "AWS S3 Connector — Ruvic",
+        toc_title: "Contents",
+        "toc.que_es": "What it is and what it’s for",
+        "toc.prerrequisitos": "Prerequisites",
+        "toc.configuracion_fabricante": "Vendor / provider setup",
+        "toc.permisos": "Required permissions",
+        "toc.configuracion_ruvic": "Configuration in Ruvic",
+        "toc.verificacion": "Verification",
+        "toc.solucion_problemas": "Troubleshooting",
+        "toc.faq_seguridad": "FAQ and security notes",
+        guide_title: "AWS S3",
+        "section.que_es": "What it is and what it’s for",
+        "que_es.body": "The AWS S3 connector lets the Ruvic agent manage objects in a specific Amazon S3 bucket. Once configured, you can ask the agent things like:",
+        "que_es.ej1": "“Upload this report to the bucket as reportes/julio-2026.csv.”",
+        "que_es.ej2": "“What files are in the facturas/ folder of the bucket?”",
+        "que_es.ej3": "“Generate a link to download contrato.pdf that lasts 1 hour.”",
+        "que_es.ops": "Supported operations:",
+        "table.operacion": "Operation",
+        "table.que_hace": "What it does",
+        "ops.list": "Lists the bucket's objects, with prefix filtering",
+        "ops.upload": "Uploads (or overwrites) content at a bucket key",
+        "ops.download": "Downloads an object's content",
+        "ops.presigned": "Generates a temporary access URL, without exposing credentials",
+        "que_es.callout.title": "This connector writes",
+        "que_es.callout.body": "s3.upload overwrites the object at the given key. The connector operates on a single bucket; the user's IAM policy should be restricted to that specific bucket.",
+        "section.prerrequisitos": "Prerequisites",
+        "prer.cuenta": "An AWS account with an S3 bucket already created.",
+        "prer.admin": "Access to the IAM console to create a user and its policy, only during initial setup.",
+        "prer.datos": "The bucket name and the AWS region where it was created (e.g. us-east-1).",
+        "section.configuracion_fabricante": "Vendor / provider setup",
+        "fab.intro": "You will create a dedicated IAM user for Ruvic, with a policy limited to the bucket you want to expose. Do not reuse root credentials or another application's credentials.",
+        "fab.p1.t": "Create the bucket-scoped policy.",
+        "fab.p1.b": "In IAM → Policies → Create policy → JSON tab, replacing mi-bucket-produccion with your real bucket name:",
+        "fab.p2.t": "Create the IAM user and attach the policy.",
+        "fab.p2.b": "In IAM → Users → Create user → set \"Provide user access to the AWS Management Console\" to NO (this is a programmatic user) → attach the policy created in step 1.",
+        "fab.p2.img": "[ Screenshot: IAM user creation with the attached policy — replace with assets/img/s3-iam-user.png ]",
+        "fab.p3.t": "Generate access keys.",
+        "fab.p3.b": "On the user's page → \"Security credentials\" tab → \"Create access key\" → type \"Application running outside AWS\". Copy the Access Key ID and Secret Access Key (the latter is shown only once): you'll use them in the Ruvic form.",
+        "fab.p4.t": "Verify access from the command line.",
+        "fab.p4.b": "With the AWS CLI configured using those credentials:",
+        "fab.p4.result": "If it responds without error (even with an empty bucket), the vendor side is ready. Write down these values for the next section: Access Key ID, Secret Access Key, region and bucket name.",
+        "section.permisos": "Required permissions",
+        "perm.intro": "Least-privilege principle: the Ruvic user only needs these permissions, limited to the configured bucket. Do not grant s3:*, s3:DeleteBucket, s3:PutBucketPolicy, or access to other buckets.",
+        "table.permiso": "Permission",
+        "table.para_que": "Why it's needed",
+        "perm.list.scope": "(on the bucket)",
+        "perm.list.body": "List objects (s3.list_objects)",
+        "perm.get.scope": "(on the objects)",
+        "perm.get.body": "Download objects and generate download URLs (s3.download, s3.presigned_url)",
+        "perm.put.scope": "(on the objects)",
+        "perm.put.body": "Upload objects and generate upload URLs (s3.upload, s3.presigned_url)",
+        "section.configuracion_ruvic": "Configuration in Ruvic",
+        "ruvic.intro": "Go to Settings → Connectors, find the AWS S3 card and click Configure. Fill in the form with the values from the previous section:",
+        "table.campo": "Form field",
+        "table.valor": "Value",
+        "ruvic.f.accesskey": "Access Key ID",
+        "ruvic.v.accesskey": "The Access Key ID from step 3",
+        "ruvic.f.secretkey": "Secret Access Key",
+        "ruvic.v.secretkey": "The Secret Access Key from step 3. Stored encrypted as a secret: the UI will never display it again",
+        "ruvic.f.region": "AWS Region",
+        "ruvic.v.region": "The region where the bucket was created (e.g. us-east-1)",
+        "ruvic.f.bucket": "Bucket",
+        "ruvic.v.bucket": "Bucket name configured in the step 1 policy",
+        "ruvic.f.timeout": "Connection timeout",
+        "ruvic.v.timeout": "Optional; defaults to 10 seconds",
+        "ruvic.save": "Save and click Test connection — the platform will verify access to the configured bucket.",
+        "ruvic.img": "[ Screenshot: AWS S3 connector form in Settings → Connectors — replace with assets/img/s3-form.png ]",
+        "section.verificacion": "Verification",
+        "ver.p1.t": "Successful connection test.",
+        "ver.p1.b": "The Test connection button should return: “Successful connection to bucket 'mi-bucket-produccion' in us-east-1”. The connector card switches to Configured.",
+        "ver.p2.t": "Minimal test automation.",
+        "ver.p2.b": "Open a new conversation with the agent and ask: “Upload a test file to the bucket with the text 'hola mundo' and then tell me what files are there.” The agent should upload the object and list it back. If it does, the connector is fully operational.",
+        "section.solucion_problemas": "Troubleshooting",
+        "table.sintoma": "Message / symptom",
+        "table.causa": "Likely cause and fix",
+        "prob.s1": "“Invalid credentials or insufficient IAM permission”",
+        "prob.c1": "Mistyped Access Key or Secret Key, or the policy doesn't include the necessary permissions on that bucket. Redo steps 1 and 3 of section 3.",
+        "prob.s2": "“Could not connect to the S3 service … (timeout)”",
+        "prob.c2": "The configured region doesn't match the bucket's actual region, or there's an outbound network issue toward AWS. Verify the region with aws s3api get-bucket-location --bucket your-bucket.",
+        "prob.s3": "“The bucket does not exist or is not accessible”",
+        "prob.c3": "Bucket name mistyped in the form, or the IAM policy points to a different ARN. Verify the policy's ARN exactly matches the bucket name.",
+        "prob.s4": "The agent lists objects but fails downloading one",
+        "prob.c4": "Missing s3:GetObject in the policy, or the object key has different casing/spacing than shown (S3 is case-sensitive).",
+        "prob.s5": "Connector shows “Not configured” after saving",
+        "prob.c5": "A required field was left empty. Open it again and fill in Access Key ID, Secret Access Key, region and bucket.",
+        "section.faq_seguridad": "FAQ and security notes",
+        "faq.q1": "Can the agent access other buckets in my account?",
+        "faq.a1": "No, if the IAM policy is correctly scoped (see section 3) — the policy's Resource points to a single bucket. If you use a broader policy (e.g. \"Resource\": \"*\"), the connector could technically reach other buckets, though in practice it only operates on the bucket set in the form.",
+        "faq.q2": "Where is the Secret Access Key stored?",
+        "faq.a2": "As a secret in the platform's credential store, tied to your user. The UI never displays it again; it only shows “set”. To change it, type a new one in the form; to keep it while editing other fields, leave the field empty.",
+        "faq.q3": "Credential rotation",
+        "faq.a3": "Recommended every 90 days or per your policy: generate a new Access Key in IAM → Security credentials, update it in the connector form, test the connection, then deactivate/delete the old key from the AWS console.",
+        "faq.q4": "What if the credentials are compromised?",
+        "faq.a4.li1": "Deactivate or delete the Access Key immediately in IAM → Security credentials.",
+        "faq.a4.li2": "Review recent activity for that user in AWS CloudTrail.",
+        "faq.a4.li3": "Generate a new Access Key and update it in the connector form.",
+        "faq.q5": "Do the credentials expire?",
+        "faq.a5": "By default no (IAM Access Keys don't expire on their own). If your organization requires forced rotation, you can set an IAM policy with a maximum age and get alerts to rotate them manually.",
+        "faq.bp.title": "Best practices",
+        "faq.bp.body": "Always use a dedicated IAM user with a policy limited to a single bucket; never use the AWS account's root credentials; prefer presigned URLs over manually sharing downloaded files; and never share the Secret Access Key over insecure channels.",
+      },
+    };
+    /* El portal aplica el idioma del usuario (localStorage ruvic-docs-lang)
+       y actualiza [data-i18n], [data-i18n-placeholder] y [data-i18n-alt]. */
+  </script>
+</body>
+</html>
