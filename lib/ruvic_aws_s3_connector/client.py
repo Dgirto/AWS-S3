@@ -46,10 +46,19 @@ _MAX_URL_EXPIRES = 604_800  # 7 días, límite de AWS para SigV4
 
 
 def _validate_key(key: str) -> str:
+    if key is not None and not isinstance(key, str):
+        raise S3DataError(f"key debe ser un string, no {type(key).__name__}.")
     key = (key or "").strip()
     if not key:
         raise S3DataError("key no puede estar vacía.")
     return key
+
+
+def _validate_limit(limit: Any, max_limit: int) -> int:
+    try:
+        return max(1, min(int(limit), max_limit))
+    except (TypeError, ValueError) as exc:
+        raise S3DataError(f"limit inválido: {limit!r}. Debe ser un número entero.") from exc
 
 
 def _wrap_client_error(exc: ClientError, not_found_message: str) -> S3ConnectorError:
@@ -150,7 +159,7 @@ class S3Client:
             >>> client.list_objects(prefix="reportes/", limit=10)
             [{'key': 'reportes/2026-07.csv', 'size': 15234, 'last_modified': '2026-07-17T10:00:00Z'}]
         """
-        limit = max(1, min(int(limit), _MAX_LIST_LIMIT))
+        limit = _validate_limit(limit, _MAX_LIST_LIMIT)
         client = self._get_client()
         try:
             response = client.list_objects_v2(
@@ -282,8 +291,8 @@ class S3Client:
         key = _validate_key(key)
         if method not in ("get_object", "put_object"):
             raise S3DataError("method debe ser 'get_object' o 'put_object'.")
-        if not 1 <= expires_in <= _MAX_URL_EXPIRES:
-            raise S3DataError(f"expires_in debe estar entre 1 y {_MAX_URL_EXPIRES} segundos.")
+        if isinstance(expires_in, bool) or not isinstance(expires_in, int) or not 1 <= expires_in <= _MAX_URL_EXPIRES:
+            raise S3DataError(f"expires_in debe ser un entero entre 1 y {_MAX_URL_EXPIRES} segundos.")
         client = self._get_client()
         try:
             url = client.generate_presigned_url(
